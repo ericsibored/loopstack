@@ -54,18 +54,11 @@ export const projectActions = {
    * re-acquire the stream rather than just setting a flag.
    */
   async setConstraint(key: keyof MicConstraints, value: boolean): Promise<void> {
-    const next = { ...useProjectStore.getState().micConstraints, [key]: value };
-    useProjectStore.setState({ micConstraints: next });
-    if (useProjectStore.getState().micReady) {
-      useProjectStore.setState({ busy: true });
-      try {
-        await engine.controller.initMic(next);
-      } catch (e) {
-        useProjectStore.setState({ error: describe(e) });
-      } finally {
-        useProjectStore.setState({ busy: false });
-      }
-    }
+    await applyConstraints({ ...useProjectStore.getState().micConstraints, [key]: value });
+  },
+
+  async setMicPreset(preset: MicConstraints): Promise<void> {
+    await applyConstraints(preset);
   },
 
   async toggleRecord(): Promise<void> {
@@ -185,6 +178,20 @@ export const projectActions = {
     engine.controller.clearStatus();
   },
 };
+
+async function applyConstraints(next: MicConstraints): Promise<void> {
+  useProjectStore.setState({ micConstraints: next });
+  if (!useProjectStore.getState().micReady) return;
+
+  useProjectStore.setState({ busy: true });
+  try {
+    await engine.controller.initMic(next);
+  } catch (e) {
+    useProjectStore.setState({ error: describe(e) });
+  } finally {
+    useProjectStore.setState({ busy: false });
+  }
+}
 
 function describe(e: unknown): string {
   return e instanceof Error ? e.message : String(e);

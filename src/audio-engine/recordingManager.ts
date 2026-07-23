@@ -18,17 +18,62 @@ export interface MicConstraints {
 }
 
 /**
- * Defaults for looping over speakers. Browser noiseSuppression is the baseline
- * de-noise per §6.4; echoCancellation is left on because a phone speaker
- * bleeding into the mic is the common case for this app.
+ * Instrument mode — everything off. This is the default.
+ *
+ * The browser's voice-processing chain is tuned for speech and actively
+ * destroys instrument recording:
+ *
+ * - `echoCancellation` cancels whatever correlates with the output, so an amp
+ *   or keyboard speaker in the room is treated as echo to be removed. It can
+ *   suppress an instrument almost entirely while voice still passes.
+ * - `noiseSuppression` is trained to remove *stationary* signals. A sustained
+ *   note is about as stationary as audio gets, so held tones get gated out
+ *   while transient speech survives.
+ * - `autoGainControl` rides the level mid-take, which makes layers recorded
+ *   seconds apart sit at different volumes.
+ *
+ * Together these produce the classic report: "it picks up my voice fine but
+ * not my keyboard." Headphones — which this app recommends anyway — remove the
+ * only reason echo cancellation was wanted.
  */
-export const DEFAULT_MIC_CONSTRAINTS: MicConstraints = {
+export const INSTRUMENT_MIC_CONSTRAINTS: MicConstraints = {
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: false,
+};
+
+/** Voice mode — the browser's speech chain, for looping vocals over speakers. */
+export const VOICE_MIC_CONSTRAINTS: MicConstraints = {
   echoCancellation: true,
   noiseSuppression: true,
   autoGainControl: false,
 };
 
+export const DEFAULT_MIC_CONSTRAINTS: MicConstraints = INSTRUMENT_MIC_CONSTRAINTS;
+
 const WORKLET_URL = '/worklets/recorder-worklet.js';
+
+/**
+ * Builds the getUserMedia audio constraints.
+ *
+ * The `goog*` entries are Chrome's pre-standard names. They are still honoured
+ * on Android, where the standard properties alone often fail to turn the voice
+ * chain off — which is precisely the case that loses an instrument. Unknown
+ * constraint keys are ignored rather than rejected, so sending both is safe.
+ */
+function buildAudioConstraints(constraints: MicConstraints): MediaTrackConstraints {
+  const { echoCancellation, noiseSuppression, autoGainControl } = constraints;
+  return {
+    echoCancellation,
+    noiseSuppression,
+    autoGainControl,
+    channelCount: 1,
+    googEchoCancellation: echoCancellation,
+    googAutoGainControl: autoGainControl,
+    googNoiseSuppression: noiseSuppression,
+    googHighpassFilter: noiseSuppression,
+  } as MediaTrackConstraints;
+}
 
 export class RecordingManager {
   private readonly ctx: AudioContext;
@@ -63,15 +108,32 @@ export class RecordingManager {
    */
   async init(constraints: MicConstraints = DEFAULT_MIC_CONSTRAINTS): Promise<void> {
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: constraints.echoCancellation,
-        noiseSuppression: constraints.noiseSuppression,
-        autoGainControl: constraints.autoGainControl,
-        channelCount: 1,
-      },
+      audio: buildAudioConstraints(constraints),
       video: false,
     });
     await this.attachStream(stream);
+  }
+
+  /**
+   * Compares what was asked for against what the device actually did.
+   *
+   * Browsers are free to ignore these constraints, and mobile ones frequently
+   * do — the processing stays on and the instrument stays missing, with nothing
+   * to indicate why. Surfacing the mismatch turns an unexplainable recording
+   * into a known device limitation.
+   */
+  getConstraintMismatches(requested: MicConstraints): Array<keyof MicConstraints> {
+    const settings = this.getAppliedConstraints();
+    if (!settings) return [];
+    const keys: Array<keyof MicConstraints> = [
+      'echoCancellation',
+      'noiseSuppression',
+      'autoGainControl',
+    ];
+    return keys.filter((key) => {
+      const actual = settings[key as keyof MediaTrackSettings];
+      return typeof actual === 'boolean' && actual !== requested[key];
+    });
   }
 
   /**

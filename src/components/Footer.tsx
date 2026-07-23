@@ -21,8 +21,14 @@ export function Footer() {
         underneath it, and that bleed builds up with every layer.
       </p>
       <p className="mt-1">
-        One exception: <em>Calibrate latency</em> measures the speaker&rarr;mic
-        round trip, so take the headphones off for that step only.
+        Recording an instrument through a speaker or amp? Keep the Input tab on{' '}
+        <strong className="font-medium text-ink">Instrument</strong> — the
+        browser&rsquo;s speech processing can silence a held note while still
+        passing voice.
+      </p>
+      <p className="mt-1">
+        One exception to headphones: <em>Calibrate latency</em> measures the
+        speaker&rarr;mic round trip, so take them off for that step only.
       </p>
     </footer>
   );

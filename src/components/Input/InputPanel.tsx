@@ -13,22 +13,26 @@ import {
   judgeLevel,
   type LevelVerdict,
 } from '../../audio-engine/inputMonitor';
-import type { MicConstraints } from '../../audio-engine/recordingManager';
+import {
+  INSTRUMENT_MIC_CONSTRAINTS,
+  VOICE_MIC_CONSTRAINTS,
+  type MicConstraints,
+} from '../../audio-engine/recordingManager';
 import { engine, projectActions, useProjectStore } from '../../store/projectStore';
 import { Diagnostics } from './Diagnostics';
 
 const CONSTRAINT_COPY: Record<keyof MicConstraints, { label: string; hint: string }> = {
   echoCancellation: {
     label: 'Echo cancellation',
-    hint: 'Reduces loop bleed when playing through speakers. Turn off if using headphones — it can thin out the sound.',
+    hint: 'Cancels anything that correlates with playback — including an amp or keyboard speaker in the room. Leave off unless looping voice over speakers.',
   },
   noiseSuppression: {
     label: 'Noise suppression',
-    hint: 'Browser-native. Helps on voice, can dull sustained instrument tone.',
+    hint: 'Removes steady signals. A held note counts as steady, so this can gate an instrument out while voice still passes.',
   },
   autoGainControl: {
     label: 'Auto gain control',
-    hint: 'Off by default: it changes level mid-take, which makes layers inconsistent.',
+    hint: 'Rides the level mid-take, leaving layers at inconsistent volumes.',
   },
 };
 
@@ -123,6 +127,9 @@ export function InputPanel() {
   }
 
   const settings = engine.recording.getAppliedConstraints();
+  const mismatches = engine.recording
+    .getConstraintMismatches(constraints)
+    .map((key) => CONSTRAINT_COPY[key].label.toLowerCase());
 
   return (
     <div className="flex flex-col gap-3">
@@ -179,7 +186,37 @@ export function InputPanel() {
       </section>
 
       <section className="flex flex-col gap-3 rounded-xl border border-edge bg-surface-raised p-4">
-        <h2 className="text-sm font-medium">Processing</h2>
+        <h2 className="text-sm font-medium">Source</h2>
+        <div className="flex gap-2">
+          <PresetButton
+            label="Instrument"
+            hint="All processing off"
+            active={isPreset(constraints, INSTRUMENT_MIC_CONSTRAINTS)}
+            onClick={() => void projectActions.setMicPreset(INSTRUMENT_MIC_CONSTRAINTS)}
+          />
+          <PresetButton
+            label="Voice"
+            hint="Speech processing on"
+            active={isPreset(constraints, VOICE_MIC_CONSTRAINTS)}
+            onClick={() => void projectActions.setMicPreset(VOICE_MIC_CONSTRAINTS)}
+          />
+        </div>
+        <p className="text-[11px] text-ink-dim">
+          Use <strong className="text-ink">Instrument</strong> for anything played
+          through a speaker or amp. The browser&rsquo;s speech processing treats a
+          sustained note as noise and speaker output as echo, which can silence an
+          instrument almost completely while still passing voice.
+        </p>
+
+        {mismatches.length > 0 && (
+          <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-300">
+            Your device ignored the request to turn {mismatches.join(' and ')} off
+            — it is still applying processing. That can suppress an instrument.
+            Try a wired mic or a different browser if the sound is missing.
+          </p>
+        )}
+
+        <h3 className="mt-1 text-xs font-medium text-ink-dim">Individual settings</h3>
         {(Object.keys(CONSTRAINT_COPY) as (keyof MicConstraints)[]).map((key) => (
           <label key={key} className="flex gap-2 text-xs">
             <input
@@ -240,6 +277,39 @@ export function InputPanel() {
 
       <Diagnostics />
     </div>
+  );
+}
+
+function PresetButton({
+  label,
+  hint,
+  active,
+  onClick,
+}: {
+  label: string;
+  hint: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex-1 rounded-lg border px-3 py-2 text-left ${
+        active ? 'border-accent bg-accent/15 text-ink' : 'border-edge text-ink-dim'
+      }`}
+    >
+      <span className="block text-sm font-medium">{label}</span>
+      <span className="block text-[11px] text-ink-dim">{hint}</span>
+    </button>
+  );
+}
+
+function isPreset(a: MicConstraints, b: MicConstraints): boolean {
+  return (
+    a.echoCancellation === b.echoCancellation &&
+    a.noiseSuppression === b.noiseSuppression &&
+    a.autoGainControl === b.autoGainControl
   );
 }
 
