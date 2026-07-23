@@ -99,6 +99,14 @@ export const projectActions = {
     engine.controller.updateTrack(id, { offsetMs: 0 });
   },
 
+  auditionTrack(id: string, loop = false): void {
+    void engine.unlock().then(() => engine.controller.auditionTrack(id, loop));
+  },
+
+  stopAudition(): void {
+    engine.controller.stopAudition();
+  },
+
   setGain(id: string, gain: number): void {
     engine.controller.updateTrack(id, { gain });
   },

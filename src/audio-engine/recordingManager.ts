@@ -35,6 +35,7 @@ export class RecordingManager {
   private stream: MediaStream | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
   private workletNode: AudioWorkletNode | null = null;
+  private analyserNode: AnalyserNode | null = null;
   private workletLoaded = false;
 
   private chunks: Float32Array[] = [];
@@ -97,6 +98,18 @@ export class RecordingManager {
     });
     this.workletNode.port.onmessage = (event) => this.onWorkletMessage(event.data);
     this.sourceNode.connect(this.workletNode);
+
+    // Monitoring tap. Deliberately a dead end — it is never connected onward to
+    // the destination, because routing the mic to the speakers is a feedback
+    // loop. An AnalyserNode pulls data without needing an output.
+    this.analyserNode = this.ctx.createAnalyser();
+    this.analyserNode.fftSize = 2048;
+    this.sourceNode.connect(this.analyserNode);
+  }
+
+  /** Live tap on the incoming mic signal, for level metering. */
+  get analyser(): AnalyserNode | null {
+    return this.analyserNode;
   }
 
   /** Returns the actual capture settings the browser granted, for diagnostics. */
@@ -132,6 +145,8 @@ export class RecordingManager {
       this.workletNode.disconnect();
       this.workletNode = null;
     }
+    this.analyserNode?.disconnect();
+    this.analyserNode = null;
     this.sourceNode?.disconnect();
     this.sourceNode = null;
     this.stream?.getTracks().forEach((t) => t.stop());

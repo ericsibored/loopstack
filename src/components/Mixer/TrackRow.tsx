@@ -28,11 +28,17 @@ export function TrackRow({ track, isFirst, isLast }: TrackRowProps) {
   const transportState = useProjectStore((s) => s.state);
   const bpm = useProjectStore((s) => s.bpm);
   const trackCount = useProjectStore((s) => s.tracks.length);
+  const auditioningTrackId = useProjectStore((s) => s.auditioningTrackId);
   const [open, setOpen] = useState(false);
+
+  const auditioning = auditioningTrackId === track.id;
 
   // Read straight from the clock each frame rather than through the store —
   // a playhead at 60fps must never go through React state.
   const getProgress = () => {
+    // While auditioning, the playhead should follow the clip being previewed,
+    // not the loop it is muted behind.
+    if (auditioning) return engine.controller.getAuditionProgress();
     if (transportState === 'stopped' || transportState === 'idle') return null;
     if (!loopLengthSec) return null;
     return engine.controller.getLoopPosition() / loopLengthSec;
@@ -60,7 +66,22 @@ export function TrackRow({ track, isFirst, isLast }: TrackRowProps) {
           </button>
         </div>
 
-        <span className="flex-1 text-sm font-medium">{track.label}</span>
+        <button
+          onClick={() => projectActions.auditionTrack(track.id)}
+          aria-pressed={auditioning}
+          aria-label={`${auditioning ? 'Stop' : 'Play'} ${track.label} on its own`}
+          title="Play this clip on its own"
+          className={`size-9 rounded-lg border text-xs ${
+            auditioning ? 'border-amber-400 bg-amber-400 text-surface' : 'border-edge text-ink-dim'
+          }`}
+        >
+          {auditioning ? '■' : '▶'}
+        </button>
+
+        <div className="flex flex-1 flex-col leading-tight">
+          <span className="text-sm font-medium">{track.label}</span>
+          <span className="font-mono text-[10px] text-ink-dim">{formatPeak(track.peakDb)}</span>
+        </div>
 
         {track.denoise === 'applied' && (
           <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">NR</span>
@@ -100,6 +121,7 @@ export function TrackRow({ track, isFirst, isLast }: TrackRowProps) {
         muted={track.muted}
         offsetMs={track.offsetMs}
         loopLengthSec={loopLengthSec}
+        auditioning={auditioning}
       />
 
       {open && (
@@ -287,6 +309,18 @@ function Slider({ label, value, min, max, step, display, onChange }: SliderProps
       <span className="w-12 text-right font-mono">{display}</span>
     </label>
   );
+}
+
+/**
+ * The waveform is normalised for visibility, so this number is the only place
+ * the clip's real level is visible. Quiet and clipped takes are both worth
+ * catching before you build three more layers on top of them.
+ */
+function formatPeak(peakDb: number): string {
+  if (!Number.isFinite(peakDb)) return 'silent';
+  if (peakDb >= -0.1) return `peak ${peakDb.toFixed(1)} dB · clipped`;
+  if (peakDb < -40) return `peak ${peakDb.toFixed(1)} dB · very quiet`;
+  return `peak ${peakDb.toFixed(1)} dB`;
 }
 
 function panLabel(pan: number): string {

@@ -10,6 +10,7 @@
  */
 
 import { AlignmentEngine, generateClick } from './alignmentEngine';
+import type { ClipAuditor } from './clipAuditor';
 import { MAX_LAYERS } from './constants';
 import type { Metronome } from './metronome';
 import { PlaybackManager } from './playbackManager';
@@ -45,6 +46,8 @@ export interface ControllerSnapshot {
   inputLatencyOffsetMs: number;
   calibrated: boolean;
   canRecord: boolean;
+  /** Clip currently being auditioned in isolation, if any. */
+  auditioningTrackId: string | null;
   error: string | null;
   status: string | null;
 }
@@ -56,6 +59,8 @@ export interface TrackSnapshot {
   /** Mono peak data for waveform drawing, downsampled once at capture time. */
   peaks: Float32Array;
   durationSec: number;
+  /** True peak of the captured audio, in dBFS. -Infinity for silence. */
+  peakDb: number;
   offsetMs: number;
   gain: number;
   pan: number;
@@ -93,6 +98,7 @@ export class LoopController {
   private readonly alignment: AlignmentEngine;
   private readonly denoiseBackend: DenoiseBackend;
   private readonly metronome: Metronome;
+  private readonly auditor: ClipAuditor;
 
   private state: ControllerState = 'idle';
   private loopLengthSec: number | null = null;
@@ -119,6 +125,7 @@ export class LoopController {
     alignment: AlignmentEngine,
     denoise: DenoiseBackend,
     metronome: Metronome,
+    auditor: ClipAuditor,
   ) {
     this.ctx = ctx;
     this.clock = clock;
@@ -127,6 +134,13 @@ export class LoopController {
     this.alignment = alignment;
     this.denoiseBackend = denoise;
     this.metronome = metronome;
+    this.auditor = auditor;
+
+    // The clip ends on its own; the loop has to be un-ducked when it does.
+    this.auditor.setListener(() => {
+      this.playback.setDucked(this.auditor.auditioningTrackId !== null);
+      this.emit();
+    });
   }
 
   subscribe(listener: (snapshot: ControllerSnapshot) => void): () => void {
@@ -148,6 +162,7 @@ export class LoopController {
       inputLatencyOffsetMs: this.inputLatencyOffsetMs,
       calibrated: this.calibrated,
       canRecord: this.tracks.size < MAX_LAYERS,
+      auditioningTrackId: this.auditor.auditioningTrackId,
       error: this.error,
       status: this.status,
     };
@@ -375,6 +390,7 @@ export class LoopController {
         order: this.tracks.size,
         peaks: computePeaks(samples, PEAK_BUCKETS),
         durationSec: samples.length / sampleRate,
+        peakDb: peakDb(samples),
         offsetMs: 0,
         gain: track.gain,
         pan: track.pan,
@@ -678,7 +694,39 @@ export class LoopController {
     const buffer = toAudioBuffer(this.ctx, samples, entry.sampleRate);
     entry.track = { ...entry.track, buffer };
     this.playback.updateTrack(entry.snapshot.id, { buffer });
-    entry.snapshot = { ...entry.snapshot, peaks: computePeaks(samples, PEAK_BUCKETS) };
+    entry.snapshot = {
+      ...entry.snapshot,
+      peaks: computePeaks(samples, PEAK_BUCKETS),
+      peakDb: peakDb(samples),
+    };
+  }
+
+  // ---------------------------------------------------------------- auditing
+
+  /**
+   * Plays one clip in isolation so it can be checked on its own. Tapping the
+   * clip that is already playing stops it, so the same control does both.
+   */
+  auditionTrack(id: string, loop = false): void {
+    if (this.auditor.auditioningTrackId === id) {
+      this.stopAudition();
+      return;
+    }
+    const entry = this.tracks.get(id);
+    if (!entry) return;
+
+    this.playback.setDucked(true);
+    this.auditor.play(id, entry.track.buffer, loop);
+  }
+
+  stopAudition(): void {
+    this.auditor.stop();
+    this.playback.setDucked(false);
+  }
+
+  /** 0-1 through the auditioned clip, for its playhead. */
+  getAuditionProgress(): number | null {
+    return this.auditor.getProgress();
   }
 
   // ------------------------------------------------------------------ common
@@ -731,6 +779,22 @@ export function computePeaks(samples: Float32Array, buckets: number): Float32Arr
     out[b] = peak;
   }
   return out;
+}
+
+/**
+ * True peak in dBFS.
+ *
+ * Reported alongside the waveform because the waveform itself is normalised for
+ * visibility — without a number next to it, a clip recorded at -40 dB would
+ * look identical to a healthy one.
+ */
+export function peakDb(samples: Float32Array): number {
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const v = Math.abs(samples[i]);
+    if (v > peak) peak = v;
+  }
+  return peak === 0 ? -Infinity : 20 * Math.log10(peak);
 }
 
 function delay(ms: number): Promise<void> {

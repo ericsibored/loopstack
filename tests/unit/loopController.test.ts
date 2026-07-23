@@ -13,6 +13,11 @@ class FakePlayback {
   readonly added: string[] = [];
   readonly removed: string[] = [];
   readonly updates: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  ducked = false;
+
+  setDucked(ducked: boolean) {
+    this.ducked = ducked;
+  }
 
   addTrack(track: { id: string }) {
     this.added.push(track.id);
@@ -65,6 +70,7 @@ const fakeCtx = {
 interface Harness {
   controller: LoopController;
   playback: FakePlayback;
+  auditor: { auditioningTrackId: string | null; played: string[] };
   denoiseCalls: number;
   /** Adds a committed track directly, bypassing the mic. */
   addTrack(samples?: Float32Array): string;
@@ -94,6 +100,20 @@ function harness(): Harness {
     click() {},
   };
 
+  const auditor = {
+    auditioningTrackId: null as string | null,
+    played: [] as string[],
+    setListener() {},
+    play(id: string) {
+      this.auditioningTrackId = id;
+      this.played.push(id);
+    },
+    stop() {
+      this.auditioningTrackId = null;
+    },
+    getProgress: () => null,
+  };
+
   const controller = new LoopController(
     fakeCtx,
     clock as never,
@@ -102,11 +122,13 @@ function harness(): Harness {
     {} as never,
     denoise as never,
     metronome as never,
+    auditor as never,
   );
 
   const h: Harness = {
     controller,
     playback,
+    auditor,
     get denoiseCalls() {
       return state.denoiseCalls;
     },
@@ -262,6 +284,64 @@ describe('LoopController de-noise A/B', () => {
 
     // Second pass runs on the committed 0.5, not the original 1.0.
     expect(h.tracks()[0].peaks[0]).toBeCloseTo(0.25);
+  });
+});
+
+describe('LoopController clip audition', () => {
+  it('plays the requested clip and ducks the loop', () => {
+    const h = harness();
+    const id = h.addTrack();
+
+    h.controller.auditionTrack(id);
+
+    expect(h.auditor.played).toEqual([id]);
+    expect(h.controller.snapshot().auditioningTrackId).toBe(id);
+    expect(h.playback.ducked).toBe(true);
+  });
+
+  it('stops when the same clip is tapped again, and un-ducks', () => {
+    const h = harness();
+    const id = h.addTrack();
+
+    h.controller.auditionTrack(id);
+    h.controller.auditionTrack(id);
+
+    expect(h.controller.snapshot().auditioningTrackId).toBeNull();
+    expect(h.playback.ducked).toBe(false);
+  });
+
+  it('switches directly between clips without stopping first', () => {
+    const h = harness();
+    const a = h.addTrack();
+    const b = h.addTrack();
+
+    h.controller.auditionTrack(a);
+    h.controller.auditionTrack(b);
+
+    expect(h.auditor.played).toEqual([a, b]);
+    expect(h.controller.snapshot().auditioningTrackId).toBe(b);
+    expect(h.playback.ducked).toBe(true);
+  });
+
+  it('ignores an unknown track id', () => {
+    const h = harness();
+    h.controller.auditionTrack('nope');
+    expect(h.controller.snapshot().auditioningTrackId).toBeNull();
+  });
+});
+
+describe('LoopController level reporting', () => {
+  it('reports true peak in dBFS alongside the normalised waveform', () => {
+    const h = harness();
+    h.addTrack(new Float32Array(480).fill(0.5));
+    // 0.5 amplitude is about -6 dBFS.
+    expect(h.tracks()[0].peakDb).toBeCloseTo(-6.02, 1);
+  });
+
+  it('reports silence as -Infinity rather than 0 dB', () => {
+    const h = harness();
+    h.addTrack(new Float32Array(480));
+    expect(h.tracks()[0].peakDb).toBe(-Infinity);
   });
 });
 

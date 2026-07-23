@@ -60,6 +60,29 @@ export class VirtualMic {
     }
   }
 
+  /**
+   * A sustained tone at a known amplitude. Useful for checking the input meter
+   * reads the level it should — a steady signal gives a stable number, which
+   * transient clicks do not.
+   */
+  tone(amplitude: number, durationSec: number, frequency = 440): () => void {
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.frequency.value = frequency;
+    gain.gain.value = amplitude;
+    osc.connect(gain);
+    gain.connect(this.bus);
+    osc.start();
+    osc.stop(this.ctx.currentTime + durationSec);
+    return () => {
+      try {
+        osc.stop();
+      } catch {
+        // Already stopped.
+      }
+    };
+  }
+
   dispose(): void {
     this.bus.disconnect();
     this.destination.stream.getTracks().forEach((t) => t.stop());

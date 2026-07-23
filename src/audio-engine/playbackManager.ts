@@ -39,6 +39,16 @@ export class PlaybackManager {
     return this.output;
   }
 
+  /**
+   * Silences the loop without stopping it, so a single clip can be auditioned
+   * against silence and the transport keeps its phase on the way back.
+   * Ramped rather than switched, because an instant gain change on a running
+   * mix is an audible click.
+   */
+  setDucked(ducked: boolean): void {
+    this.output.gain.setTargetAtTime(ducked ? 0 : 1, this.ctx.currentTime, 0.015);
+  }
+
   /** Begins responding to loop boundaries. Idempotent. */
   connect(): void {
     if (this.unsubscribe) return;

@@ -8,6 +8,7 @@
 
 import { AlignmentEngine } from './alignmentEngine';
 import { getAudioContext, resumeAudioContext } from './audioContext';
+import { ClipAuditor } from './clipAuditor';
 import { RnnoiseBackend } from './denoiseProcessor';
 import { LoopController } from './loopController';
 import { Metronome } from './metronome';
@@ -24,6 +25,7 @@ export class LoopEngine {
   readonly alignment: AlignmentEngine;
   readonly denoise: DenoiseBackend;
   readonly metronome: Metronome;
+  readonly auditor: ClipAuditor;
   readonly controller: LoopController;
 
   constructor(ctx: AudioContext = getAudioContext(), denoise: DenoiseBackend = new RnnoiseBackend()) {
@@ -34,6 +36,7 @@ export class LoopEngine {
     this.alignment = new AlignmentEngine();
     this.denoise = denoise;
     this.metronome = new Metronome(ctx, this.clock);
+    this.auditor = new ClipAuditor(ctx);
     this.controller = new LoopController(
       ctx,
       this.clock,
@@ -42,6 +45,7 @@ export class LoopEngine {
       this.alignment,
       denoise,
       this.metronome,
+      this.auditor,
     );
     this.playback.connect();
   }
@@ -63,6 +67,7 @@ export class LoopEngine {
     this.alignment.dispose();
     this.denoise.dispose();
     this.metronome.dispose();
+    this.auditor.dispose();
   }
 }
 

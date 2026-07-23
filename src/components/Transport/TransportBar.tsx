@@ -47,34 +47,18 @@ export function TransportBar() {
         )}
       </div>
 
+      {/* Mic settings, levels and calibration all live on the Input tab now.
+          Their state is summarised here so a problem is visible from the tab
+          you actually record on. */}
       {micReady && (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => void projectActions.calibrate()}
-            disabled={busy || calibrating}
-            className={`h-9 rounded-lg border px-3 text-xs disabled:opacity-40 ${
-              calibrated ? 'border-edge text-ink-dim' : 'border-accent text-accent'
-            }`}
-          >
-            {calibrating ? 'Listening…' : calibrated ? 'Re-calibrate' : 'Calibrate latency'}
-          </button>
-          <span className="font-mono text-xs text-ink-dim">
-            {calibrated ? `${latencyMs.toFixed(1)}ms round trip` : 'not calibrated'}
-          </span>
-        </div>
+        <p className="text-[11px] text-ink-dim">
+          {calibrated
+            ? `Calibrated at ${latencyMs.toFixed(1)} ms.`
+            : 'Not calibrated — overdubs may land late.'}{' '}
+          Noise suppression {constraints.noiseSuppression ? 'on' : 'off'}. Check
+          levels on the Input tab.
+        </p>
       )}
-
-      <label className="flex items-center gap-2 text-xs text-ink-dim">
-        <input
-          type="checkbox"
-          checked={constraints.noiseSuppression}
-          disabled={busy}
-          onChange={(e) => void projectActions.setConstraint('noiseSuppression', e.target.checked)}
-          className="size-4 accent-[oklch(0.82_0.15_175)]"
-        />
-        Noise suppression
-        {micReady && <span className="text-ink-dim/60">(re-acquires the mic)</span>}
-      </label>
     </section>
   );
 }
