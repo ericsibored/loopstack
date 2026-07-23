@@ -108,6 +108,18 @@ export const projectActions = {
     engine.controller.stopAudition();
   },
 
+  selectTrack(id: string | null): void {
+    engine.controller.selectTrack(id);
+  },
+
+  setTrim(id: string, startSec: number, endSec: number): void {
+    engine.controller.setTrim(id, startSec, endSec);
+  },
+
+  resetTrim(id: string): void {
+    engine.controller.resetTrim(id);
+  },
+
   setGain(id: string, gain: number): void {
     engine.controller.updateTrack(id, { gain });
   },

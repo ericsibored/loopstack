@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computePeaks } from '../../src/audio-engine/loopController';
 import { isAudible } from '../../src/audio-engine/mixdownRenderer';
-import type { PlayableTrack } from '../../src/audio-engine/types';
+import { getTrimRegion, type PlayableTrack } from '../../src/audio-engine/types';
 
 /** `buffer` is never read by `isAudible`, so a stub keeps this DOM-free. */
 function track(partial: Partial<PlayableTrack> & { id: string }): PlayableTrack {
@@ -14,6 +14,14 @@ function track(partial: Partial<PlayableTrack> & { id: string }): PlayableTrack 
     soloed: false,
     ...partial,
   };
+}
+
+function trackWithBuffer(duration: number, partial: Partial<PlayableTrack> = {}): PlayableTrack {
+  return track({
+    id: 'x',
+    buffer: { duration } as AudioBuffer,
+    ...partial,
+  });
 }
 
 describe('isAudible', () => {
@@ -37,6 +45,41 @@ describe('isAudible', () => {
     // export contains a track the user explicitly silenced.
     const tracks = [track({ id: 'a', soloed: true, muted: true }), track({ id: 'b' })];
     expect(tracks.filter((t) => isAudible(t, tracks))).toEqual([]);
+  });
+});
+
+describe('getTrimRegion', () => {
+  it('defaults to the whole buffer when untrimmed', () => {
+    expect(getTrimRegion(trackWithBuffer(2))).toEqual({ startSec: 0, durationSec: 2 });
+  });
+
+  it('treats a null end as the end of the buffer', () => {
+    expect(getTrimRegion(trackWithBuffer(2, { trimStartSec: 0.5, trimEndSec: null }))).toEqual({
+      startSec: 0.5,
+      durationSec: 1.5,
+    });
+  });
+
+  it('returns the cropped region', () => {
+    expect(getTrimRegion(trackWithBuffer(4, { trimStartSec: 1, trimEndSec: 3 }))).toEqual({
+      startSec: 1,
+      durationSec: 2,
+    });
+  });
+
+  it('clamps bounds that run past the buffer', () => {
+    expect(getTrimRegion(trackWithBuffer(2, { trimStartSec: -1, trimEndSec: 99 }))).toEqual({
+      startSec: 0,
+      durationSec: 2,
+    });
+  });
+
+  it('never returns a negative duration when the bounds are inverted', () => {
+    // Reachable by dragging one handle past the other; must not produce a
+    // negative duration, which would throw inside AudioBufferSourceNode.start.
+    const region = getTrimRegion(trackWithBuffer(2, { trimStartSec: 1.5, trimEndSec: 0.5 }));
+    expect(region.durationSec).toBe(0);
+    expect(region.startSec).toBe(1.5);
   });
 });
 

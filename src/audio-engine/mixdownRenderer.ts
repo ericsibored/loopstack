@@ -8,7 +8,7 @@
  * matching what the user heard, which is the worst possible export bug.
  */
 
-import type { PlayableTrack } from './types';
+import { getTrimRegion, type PlayableTrack } from './types';
 import { audioBufferToWav } from './wav';
 
 export interface MixdownOptions {
@@ -53,19 +53,23 @@ export async function renderMixdown(options: MixdownOptions): Promise<AudioBuffe
     gainNode.connect(panner);
     panner.connect(ctx.destination);
 
+    // Same crop the live path applies — see PlaybackManager.scheduleTrack.
+    const { startSec, durationSec } = getTrimRegion(track);
+    if (durationSec <= 0) continue;
+
     for (let iteration = 0; iteration < repeats; iteration++) {
       const source = ctx.createBufferSource();
       source.buffer = track.buffer;
       source.connect(gainNode);
 
-      const start = iteration * loopLengthSec + track.offsetMs / 1000;
+      const start = iteration * loopLengthSec + track.offsetMs / 1000 + startSec;
       if (start >= 0) {
-        source.start(start);
+        source.start(start, startSec, durationSec);
       } else {
         // Negative offset on the first iteration would start before zero;
         // skip into the buffer instead, exactly as PlaybackManager does.
         const skip = -start;
-        if (skip < track.buffer.duration) source.start(0, skip);
+        if (skip < durationSec) source.start(0, startSec + skip, durationSec - skip);
       }
     }
   }

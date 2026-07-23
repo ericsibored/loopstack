@@ -11,6 +11,7 @@
 import { useState } from 'react';
 import { engine, projectActions, useProjectStore } from '../../store/projectStore';
 import type { TrackSnapshot } from '../../audio-engine/loopController';
+import { TrimEditor } from './TrimEditor';
 import { Waveform } from '../Waveform/Waveform';
 
 const NUDGE_STEP_MS = 5;
@@ -29,9 +30,13 @@ export function TrackRow({ track, isFirst, isLast }: TrackRowProps) {
   const bpm = useProjectStore((s) => s.bpm);
   const trackCount = useProjectStore((s) => s.tracks.length);
   const auditioningTrackId = useProjectStore((s) => s.auditioningTrackId);
+  const selectedTrackId = useProjectStore((s) => s.selectedTrackId);
   const [open, setOpen] = useState(false);
 
   const auditioning = auditioningTrackId === track.id;
+  const selected = selectedTrackId === track.id;
+  const trimmed =
+    track.trimStartSec > 0.001 || track.trimEndSec < track.durationSec - 0.001;
 
   // Read straight from the clock each frame rather than through the store —
   // a playhead at 60fps must never go through React state.
@@ -45,7 +50,11 @@ export function TrackRow({ track, isFirst, isLast }: TrackRowProps) {
   };
 
   return (
-    <li className="rounded-xl border border-edge bg-surface-raised p-3">
+    <li
+      className={`rounded-xl border bg-surface-raised p-3 ${
+        selected ? 'border-accent' : 'border-edge'
+      }`}
+    >
       <div className="mb-1 flex items-center gap-2">
         <div className="flex flex-col">
           <button
@@ -78,11 +87,20 @@ export function TrackRow({ track, isFirst, isLast }: TrackRowProps) {
           {auditioning ? '■' : '▶'}
         </button>
 
-        <div className="flex flex-1 flex-col leading-tight">
+        {/* Selecting is what the label is for: tapping the name of the thing
+            you want to edit is more discoverable than a dedicated control. */}
+        <button
+          onClick={() => projectActions.selectTrack(selected ? null : track.id)}
+          aria-pressed={selected}
+          className="flex flex-1 flex-col items-start leading-tight text-left"
+        >
           <span className="text-sm font-medium">{track.label}</span>
           <span className="font-mono text-[10px] text-ink-dim">{formatPeak(track.peakDb)}</span>
-        </div>
+        </button>
 
+        {trimmed && (
+          <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">TRIM</span>
+        )}
         {track.denoise === 'applied' && (
           <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">NR</span>
         )}
@@ -133,7 +151,15 @@ export function TrackRow({ track, isFirst, isLast }: TrackRowProps) {
         offsetMs={track.offsetMs}
         loopLengthSec={loopLengthSec}
         auditioning={auditioning}
+        trimStartRatio={track.durationSec > 0 ? track.trimStartSec / track.durationSec : 0}
+        trimEndRatio={track.durationSec > 0 ? track.trimEndSec / track.durationSec : 1}
       />
+
+      {selected && (
+        <div className="mt-2">
+          <TrimEditor track={track} />
+        </div>
+      )}
 
       {open && (
         <div className="mt-2 flex flex-col gap-3 border-t border-edge pt-3">

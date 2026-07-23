@@ -49,6 +49,22 @@ export interface PlayableTrack {
   pan: number;
   muted: boolean;
   soloed: boolean;
+  /**
+   * Non-destructive crop, in seconds from the start of the buffer. The audio
+   * outside this region is not played; the audio inside keeps its original
+   * position in the loop, so trimming a noisy head never shifts the downbeat.
+   * `trimEndSec` of null means "to the end of the buffer".
+   */
+  trimStartSec?: number;
+  trimEndSec?: number | null;
+}
+
+/** Resolves a track's crop against its buffer. */
+export function getTrimRegion(track: PlayableTrack): { startSec: number; durationSec: number } {
+  const total = track.buffer.duration;
+  const startSec = Math.max(0, Math.min(track.trimStartSec ?? 0, total));
+  const endSec = Math.max(startSec, Math.min(track.trimEndSec ?? total, total));
+  return { startSec, durationSec: endSec - startSec };
 }
 
 /** A loop boundary the scheduler has committed to. */

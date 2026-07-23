@@ -366,6 +366,114 @@ describe('LoopController pause, stop and clear', () => {
   });
 });
 
+describe('LoopController selection and trim', () => {
+  it('selects a newly recorded layer automatically', () => {
+    const h = harness();
+    h.addTrack();
+    const b = h.addTrack();
+    expect(h.controller.snapshot().selectedTrackId).toBe(b);
+  });
+
+  it('toggles selection off and on', () => {
+    const h = harness();
+    const id = h.addTrack();
+
+    h.controller.selectTrack(null);
+    expect(h.controller.snapshot().selectedTrackId).toBeNull();
+
+    h.controller.selectTrack(id);
+    expect(h.controller.snapshot().selectedTrackId).toBe(id);
+  });
+
+  it('ignores selection of an unknown track', () => {
+    const h = harness();
+    h.addTrack();
+    h.controller.selectTrack('nope');
+    expect(h.controller.snapshot().selectedTrackId).toBeNull();
+  });
+
+  it('falls back to a surviving layer when the selected one is deleted', () => {
+    const h = harness();
+    const a = h.addTrack();
+    const b = h.addTrack();
+
+    h.controller.selectTrack(b);
+    h.controller.removeTrack(b);
+    expect(h.controller.snapshot().selectedTrackId).toBe(a);
+  });
+
+  it('starts untrimmed across the full clip', () => {
+    const h = harness();
+    // 480 samples at 48kHz = 0.01s
+    h.addTrack(new Float32Array(4800));
+    const t = h.tracks()[0];
+    expect(t.trimStartSec).toBe(0);
+    expect(t.trimEndSec).toBeCloseTo(0.1);
+  });
+
+  it('applies a crop to both the snapshot and playback', () => {
+    const h = harness();
+    const id = h.addTrack(new Float32Array(48000)); // 1s
+
+    h.controller.setTrim(id, 0.25, 0.75);
+
+    const t = h.tracks()[0];
+    expect(t.trimStartSec).toBeCloseTo(0.25);
+    expect(t.trimEndSec).toBeCloseTo(0.75);
+    expect(h.playback.updates.at(-1)).toEqual({
+      id,
+      patch: { trimStartSec: 0.25, trimEndSec: 0.75 },
+    });
+  });
+
+  it('clamps a crop that runs past the clip', () => {
+    const h = harness();
+    const id = h.addTrack(new Float32Array(48000));
+
+    h.controller.setTrim(id, -5, 99);
+    const t = h.tracks()[0];
+    expect(t.trimStartSec).toBe(0);
+    expect(t.trimEndSec).toBeCloseTo(1);
+  });
+
+  it('refuses to collapse the crop to nothing', () => {
+    const h = harness();
+    const id = h.addTrack(new Float32Array(48000));
+
+    // Dragging the end handle below the start must leave audible audio, or the
+    // layer goes silent with no obvious way back.
+    h.controller.setTrim(id, 0.5, 0.1);
+    const t = h.tracks()[0];
+    expect(t.trimEndSec).toBeGreaterThan(t.trimStartSec);
+  });
+
+  it('restores the full clip on reset', () => {
+    const h = harness();
+    const id = h.addTrack(new Float32Array(48000));
+
+    h.controller.setTrim(id, 0.25, 0.75);
+    expect(h.controller.isTrimmed(id)).toBe(true);
+
+    h.controller.resetTrim(id);
+    expect(h.controller.isTrimmed(id)).toBe(false);
+    expect(h.tracks()[0].trimStartSec).toBe(0);
+    expect(h.tracks()[0].trimEndSec).toBeCloseTo(1);
+  });
+
+  it('keeps trimming non-destructive, so de-noise still sees the full capture', async () => {
+    const h = harness();
+    const id = h.addTrack(new Float32Array(48000).fill(1));
+
+    h.controller.setTrim(id, 0.5, 0.6);
+    await h.controller.runDenoise(id);
+
+    // The fake backend halves whatever it is given; peaks covering the whole
+    // clip prove it processed the full buffer, not just the cropped region.
+    expect(h.tracks()[0].peaks[0]).toBeCloseTo(0.5);
+    expect(h.tracks()[0].trimStartSec).toBeCloseTo(0.5);
+  });
+});
+
 describe('LoopController clip audition', () => {
   it('plays the requested clip and ducks the loop', () => {
     const h = harness();

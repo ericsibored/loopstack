@@ -9,7 +9,7 @@
  */
 
 import { MAX_LAYERS } from './constants';
-import type { LoopBoundary, PlayableTrack } from './types';
+import { getTrimRegion, type LoopBoundary, type PlayableTrack } from './types';
 import type { TransportClock } from './transportClock';
 
 interface TrackChain {
@@ -154,20 +154,26 @@ export class PlaybackManager {
   }
 
   private scheduleTrack(chain: TrackChain, boundary: LoopBoundary): void {
+    const { startSec, durationSec } = getTrimRegion(chain.track);
+    if (durationSec <= 0) return;
+
     const source = this.ctx.createBufferSource();
     source.buffer = chain.track.buffer;
     source.connect(chain.gainNode);
 
-    const target = boundary.time + chain.track.offsetMs / 1000;
+    // The crop's start time within the loop includes where it sits in the
+    // buffer, so cropping the head of a clip silences it without dragging the
+    // rest of the take earlier.
+    const target = boundary.time + chain.track.offsetMs / 1000 + startSec;
 
     if (target >= this.ctx.currentTime) {
-      source.start(target);
+      source.start(target, startSec, durationSec);
     } else {
       // A negative offset can place the start behind us. Start now, skipping
       // into the buffer by however much we missed, so the track stays in phase.
       const skip = this.ctx.currentTime - target;
-      if (skip >= chain.track.buffer.duration) return;
-      source.start(this.ctx.currentTime, skip);
+      if (skip >= durationSec) return;
+      source.start(this.ctx.currentTime, startSec + skip, durationSec - skip);
     }
 
     chain.pending.add(source);

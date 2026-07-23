@@ -24,6 +24,9 @@ interface WaveformProps {
   loopLengthSec: number | null;
   /** Highlights the lane while this clip is being auditioned on its own. */
   auditioning?: boolean;
+  /** Cropped-out regions, as 0-1 fractions of the clip. */
+  trimStartRatio?: number;
+  trimEndRatio?: number;
 }
 
 /**
@@ -40,12 +43,32 @@ export function Waveform({
   offsetMs,
   loopLengthSec,
   auditioning = false,
+  trimStartRatio = 0,
+  trimEndRatio = 1,
 }: WaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Held in refs so the animation loop reads current values without being torn
   // down and restarted on every prop change.
-  const stateRef = useRef({ peaks, getProgress, muted, offsetMs, loopLengthSec, auditioning });
-  stateRef.current = { peaks, getProgress, muted, offsetMs, loopLengthSec, auditioning };
+  const stateRef = useRef({
+    peaks,
+    getProgress,
+    muted,
+    offsetMs,
+    loopLengthSec,
+    auditioning,
+    trimStartRatio,
+    trimEndRatio,
+  });
+  stateRef.current = {
+    peaks,
+    getProgress,
+    muted,
+    offsetMs,
+    loopLengthSec,
+    auditioning,
+    trimStartRatio,
+    trimEndRatio,
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -85,13 +108,20 @@ export function Waveform({
       for (let i = 0; i < count; i++) if (s.peaks[i] > max) max = s.peaks[i];
       const scale = max > SILENCE_FLOOR ? 1 / max : 1;
 
-      context.fillStyle = s.muted
+      const active = s.muted
         ? 'oklch(0.45 0.02 265)'
         : s.auditioning
           ? 'oklch(0.9 0.16 95)'
           : 'oklch(0.82 0.15 175)';
+      // Cropped audio is drawn faintly rather than hidden, so you can still see
+      // what you are cutting and how much of it there is.
+      const cropped = 'oklch(0.38 0.02 265)';
 
       for (let i = 0; i < count; i++) {
+        const ratio = i / count;
+        const inCrop = ratio >= s.trimStartRatio && ratio < s.trimEndRatio;
+        context.fillStyle = inCrop ? active : cropped;
+
         const amplitude = Math.min(1, s.peaks[i] * scale);
         const barHeight = Math.max(1, amplitude * (height - 4));
         context.fillRect(
@@ -100,6 +130,14 @@ export function Waveform({
           Math.max(1, barWidth - 0.5),
           barHeight,
         );
+      }
+
+      // Boundary markers, so the exact crop points are readable even where the
+      // audio either side is quiet.
+      if (s.trimStartRatio > 0 || s.trimEndRatio < 1) {
+        context.fillStyle = 'oklch(0.82 0.15 175)';
+        context.fillRect(s.trimStartRatio * width + shift, 0, 1.5, height);
+        context.fillRect(s.trimEndRatio * width + shift - 1.5, 0, 1.5, height);
       }
 
       const progress = s.getProgress();

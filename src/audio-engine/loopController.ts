@@ -49,6 +49,8 @@ export interface ControllerSnapshot {
   canRecord: boolean;
   /** Clip currently being auditioned in isolation, if any. */
   auditioningTrackId: string | null;
+  /** Layer the editing controls act on. */
+  selectedTrackId: string | null;
   error: string | null;
   status: string | null;
 }
@@ -68,6 +70,9 @@ export interface TrackSnapshot {
   muted: boolean;
   soloed: boolean;
   denoise: DenoiseState;
+  /** Non-destructive crop bounds, in seconds from the start of the clip. */
+  trimStartSec: number;
+  trimEndSec: number;
   /** Pending auto-align suggestion, awaiting accept or reject. */
   alignSuggestionMs: number | null;
   alignConfidence: number | null;
@@ -113,6 +118,7 @@ export class LoopController {
   private readonly tracks = new Map<string, TrackEntry>();
   private readonly listeners = new Set<(snapshot: ControllerSnapshot) => void>();
 
+  private selectedTrackId: string | null = null;
   private pausedPosition: number | null = null;
   private recordStartTime = 0;
   private overdubTimer: ReturnType<typeof setTimeout> | null = null;
@@ -165,6 +171,7 @@ export class LoopController {
       calibrated: this.calibrated,
       canRecord: this.tracks.size < MAX_LAYERS,
       auditioningTrackId: this.auditor.auditioningTrackId,
+      selectedTrackId: this.selectedTrackId,
       error: this.error,
       status: this.status,
     };
@@ -399,10 +406,57 @@ export class LoopController {
         muted: false,
         soloed: false,
         denoise: 'none',
+        trimStartSec: 0,
+        trimEndSec: samples.length / sampleRate,
         alignSuggestionMs: null,
         alignConfidence: null,
       },
     });
+    // A new layer becomes the selected one: it is what you just made and so
+    // the thing you are most likely to want to adjust.
+    this.selectedTrackId = id;
+  }
+
+  // ------------------------------------------------------- selection & trim
+
+  selectTrack(id: string | null): void {
+    this.selectedTrackId = id !== null && this.tracks.has(id) ? id : null;
+    this.emit();
+  }
+
+  /**
+   * Sets the crop, in seconds. Non-destructive: the audio is untouched and the
+   * bounds can be widened again at any time, which is why de-noise and
+   * auto-align keep working off the full capture.
+   */
+  setTrim(id: string, startSec: number, endSec: number): void {
+    const entry = this.tracks.get(id);
+    if (!entry) return;
+
+    const total = entry.snapshot.durationSec;
+    const start = clamp(startSec, 0, total);
+    // Keep a sliver of audio rather than allowing an empty region, so a
+    // dragged handle can never silence the layer with no way back.
+    const end = clamp(endSec, Math.min(start + 0.01, total), total);
+
+    entry.track = { ...entry.track, trimStartSec: start, trimEndSec: end };
+    entry.snapshot = { ...entry.snapshot, trimStartSec: start, trimEndSec: end };
+    this.playback.updateTrack(id, { trimStartSec: start, trimEndSec: end });
+    this.emit();
+  }
+
+  resetTrim(id: string): void {
+    const entry = this.tracks.get(id);
+    if (!entry) return;
+    this.setTrim(id, 0, entry.snapshot.durationSec);
+  }
+
+  /** True if the layer is cropped at all — used to badge it in the UI. */
+  isTrimmed(id: string): boolean {
+    const entry = this.tracks.get(id);
+    if (!entry) return false;
+    const { trimStartSec, trimEndSec, durationSec } = entry.snapshot;
+    return trimStartSec > 0.001 || trimEndSec < durationSec - 0.001;
   }
 
   // ------------------------------------------------------------------ mixing
@@ -438,8 +492,14 @@ export class LoopController {
 
   removeTrack(id: string): void {
     if (!this.tracks.has(id)) return;
+    if (this.auditor.auditioningTrackId === id) this.stopAudition();
     this.playback.removeTrack(id);
     this.tracks.delete(id);
+    if (this.selectedTrackId === id) {
+      // Fall back to whatever is still there, so the editor does not vanish
+      // just because a neighbouring layer was deleted.
+      this.selectedTrackId = this.tracks.keys().next().value ?? null;
+    }
 
     [...this.tracks.values()]
       .sort((a, b) => a.snapshot.order - b.snapshot.order)
@@ -470,6 +530,7 @@ export class LoopController {
     this.stopTransport();
     this.loopLengthSec = null;
     this.pausedPosition = null;
+    this.selectedTrackId = null;
     this.state = 'idle';
     this.status = 'Cleared. The next take sets a new loop length.';
     this.emit();
@@ -841,6 +902,10 @@ export function peakDb(samples: Float32Array): number {
     if (v > peak) peak = v;
   }
   return peak === 0 ? -Infinity : 20 * Math.log10(peak);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function delay(ms: number): Promise<void> {
