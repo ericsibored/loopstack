@@ -15,7 +15,7 @@ import { ExportPanel } from './components/Export/ExportPanel';
 import { Footer } from './components/Footer';
 import { InputPanel } from './components/Input/InputPanel';
 import { TrackList } from './components/Mixer/TrackList';
-import { RecordButton } from './components/Record/RecordButton';
+import { TransportControls } from './components/Record/TransportControls';
 import { GridBar } from './components/Transport/GridBar';
 import { TransportBar } from './components/Transport/TransportBar';
 import { projectActions, useProjectStore } from './store/projectStore';
@@ -92,7 +92,7 @@ function Looper() {
       </div>
 
       <div className="pt-1">
-        <RecordButton />
+        <TransportControls />
       </div>
 
       <Footer />

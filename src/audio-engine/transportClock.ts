@@ -51,6 +51,31 @@ export class TransportClock {
     return this.running;
   }
 
+  /**
+   * Scheduler health, for the diagnostics readout.
+   *
+   * `boundariesEmitted` is the number that matters: if it stops climbing while
+   * the transport says it is running, the scheduler has stalled and the audio
+   * has gone quiet — which is otherwise very hard to tell apart from a mixing
+   * or capture problem.
+   */
+  getHealth(): {
+    running: boolean;
+    boundariesEmitted: number;
+    nextBoundaryTime: number;
+    secondsUntilNextBoundary: number;
+    workerTickerAlive: boolean | null;
+  } {
+    const ticker = this.ticker as { workerAlive?: boolean };
+    return {
+      running: this.running,
+      boundariesEmitted: this.nextIteration,
+      nextBoundaryTime: this.nextBoundaryTime,
+      secondsUntilNextBoundary: this.nextBoundaryTime - this.source.currentTime,
+      workerTickerAlive: typeof ticker.workerAlive === 'boolean' ? ticker.workerAlive : null,
+    };
+  }
+
   get loopLength(): number {
     return this.loopLengthSec;
   }

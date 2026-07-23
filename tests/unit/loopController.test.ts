@@ -34,15 +34,19 @@ class FakePlayback {
 class FakeClock {
   isRunning = false;
   loopLength = 0;
-  start(length: number) {
+  position = 0;
+  readonly starts: Array<{ length: number; when: number | undefined }> = [];
+
+  start(length: number, when?: number) {
     this.isRunning = true;
     this.loopLength = length;
+    this.starts.push({ length, when });
   }
   stop() {
     this.isRunning = false;
   }
   getCurrentLoopPosition() {
-    return 0;
+    return this.position;
   }
   getNextBoundaryAfter(t: number) {
     return t;
@@ -70,6 +74,7 @@ const fakeCtx = {
 interface Harness {
   controller: LoopController;
   playback: FakePlayback;
+  clock: FakeClock;
   auditor: { auditioningTrackId: string | null; played: string[] };
   denoiseCalls: number;
   /** Adds a committed track directly, bypassing the mic. */
@@ -128,6 +133,7 @@ function harness(): Harness {
   const h: Harness = {
     controller,
     playback,
+    clock,
     auditor,
     get denoiseCalls() {
       return state.denoiseCalls;
@@ -284,6 +290,79 @@ describe('LoopController de-noise A/B', () => {
 
     // Second pass runs on the committed 0.5, not the original 1.0.
     expect(h.tracks()[0].peaks[0]).toBeCloseTo(0.25);
+  });
+});
+
+describe('LoopController pause, stop and clear', () => {
+  /** Gives the controller a loop without needing a mic. */
+  function withLoop() {
+    const h = harness();
+    h.addTrack();
+    (h.controller as never as { loopLengthSec: number }).loopLengthSec = 2;
+    h.clock.start(2);
+    h.clock.starts.length = 0;
+    return h;
+  }
+
+  it('resumes from where it was paused, not from the top', () => {
+    const h = withLoop();
+    h.clock.position = 0.75;
+
+    h.controller.pause();
+    expect(h.controller.snapshot().state).toBe('paused');
+    expect(h.clock.isRunning).toBe(false);
+
+    h.controller.play();
+    // Loop zero is anchored 0.75s in the past, which is what makes playback
+    // pick up mid-loop instead of restarting.
+    const start = h.clock.starts.at(-1)!;
+    expect(start.when).toBeCloseTo(fakeCtx.currentTime - 0.75);
+    expect(h.controller.snapshot().state).toBe('playing');
+  });
+
+  it('restarts from the top after stop, discarding the paused position', () => {
+    const h = withLoop();
+    h.clock.position = 0.75;
+
+    h.controller.pause();
+    h.controller.stop();
+    expect(h.controller.snapshot().state).toBe('stopped');
+
+    h.controller.play();
+    // No anchor time: a plain start, i.e. from loop position zero.
+    expect(h.clock.starts.at(-1)!.when).toBeUndefined();
+  });
+
+  it('does not pause mid-recording', () => {
+    const h = withLoop();
+    (h.controller as never as { state: string }).state = 'recording';
+
+    h.controller.pause();
+    expect(h.controller.snapshot().state).toBe('recording');
+  });
+
+  it('clears every layer and forgets the loop length', () => {
+    const h = withLoop();
+    h.addTrack();
+    expect(h.tracks()).toHaveLength(2);
+
+    h.controller.clearAllTracks();
+
+    const snap = h.controller.snapshot();
+    expect(snap.tracks).toEqual([]);
+    expect(snap.loopLengthSec).toBeNull();
+    expect(snap.state).toBe('idle');
+    expect(h.clock.isRunning).toBe(false);
+    expect(h.playback.removed).toHaveLength(2);
+  });
+
+  it('stops an in-progress audition when clearing', () => {
+    const h = withLoop();
+    const id = h.tracks()[0].id;
+    h.controller.auditionTrack(id);
+
+    h.controller.clearAllTracks();
+    expect(h.controller.snapshot().auditioningTrackId).toBeNull();
   });
 });
 

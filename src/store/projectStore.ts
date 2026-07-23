@@ -77,8 +77,16 @@ export const projectActions = {
     void engine.unlock().then(() => engine.controller.play());
   },
 
+  pause(): void {
+    engine.controller.pause();
+  },
+
   stop(): void {
     engine.controller.stop();
+  },
+
+  clearAll(): void {
+    engine.controller.clearAllTracks();
   },
 
   setMuted(id: string, muted: boolean): void {

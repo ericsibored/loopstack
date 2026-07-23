@@ -86,6 +86,50 @@ export class ManualTicker implements Ticker {
   }
 }
 
+/**
+ * Runs a Worker timer and a main-thread timer together.
+ *
+ * Each covers the other's failure mode. The Worker survives tab backgrounding,
+ * where `setInterval` is clamped to ~1s; the interval survives the Worker not
+ * running at all, which is what happens if a Content-Security-Policy forbids
+ * `blob:` workers. That second case is silent and total — no error, no ticks,
+ * and the transport schedules one lookahead window of audio and then goes
+ * quiet, which presents as "playback stops after the first few seconds."
+ *
+ * Double-driving is free: `TransportClock.tick()` only emits boundaries it has
+ * not already emitted, so an extra call does nothing.
+ */
+export class ResilientTicker implements Ticker {
+  private readonly worker = new WorkerTicker();
+  private readonly interval = new IntervalTicker();
+  private workerTicks = 0;
+
+  start(intervalMs: number, onTick: () => void): void {
+    this.workerTicks = 0;
+    try {
+      this.worker.start(intervalMs, () => {
+        this.workerTicks++;
+        onTick();
+      });
+    } catch {
+      // Worker construction blocked; the interval below carries the load.
+    }
+    // Slower, because it is a safety net rather than the primary driver. Still
+    // well inside the scheduling window, so nothing is missed if it is alone.
+    this.interval.start(Math.max(intervalMs, 100), onTick);
+  }
+
+  stop(): void {
+    this.worker.stop();
+    this.interval.stop();
+  }
+
+  /** False if the Worker never delivered a tick — surfaced in diagnostics. */
+  get workerAlive(): boolean {
+    return this.workerTicks > 0;
+  }
+}
+
 export function createTicker(): Ticker {
-  return typeof Worker === 'undefined' ? new IntervalTicker() : new WorkerTicker();
+  return typeof Worker === 'undefined' ? new IntervalTicker() : new ResilientTicker();
 }

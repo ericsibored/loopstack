@@ -30,6 +30,7 @@ export type ControllerState =
   | 'armed'
   | 'recording'
   | 'playing'
+  | 'paused'
   | 'stopped'
   | 'calibrating';
 
@@ -112,6 +113,7 @@ export class LoopController {
   private readonly tracks = new Map<string, TrackEntry>();
   private readonly listeners = new Set<(snapshot: ControllerSnapshot) => void>();
 
+  private pausedPosition: number | null = null;
   private recordStartTime = 0;
   private overdubTimer: ReturnType<typeof setTimeout> | null = null;
   private countInTimer: ReturnType<typeof setTimeout> | null = null;
@@ -455,6 +457,24 @@ export class LoopController {
     this.emit();
   }
 
+  /**
+   * Discards every layer and returns to a blank slate, including the loop
+   * length — so the next take is free to define a new one.
+   */
+  clearAllTracks(): void {
+    this.stopAudition();
+    for (const id of [...this.tracks.keys()]) {
+      this.playback.removeTrack(id);
+      this.tracks.delete(id);
+    }
+    this.stopTransport();
+    this.loopLengthSec = null;
+    this.pausedPosition = null;
+    this.state = 'idle';
+    this.status = 'Cleared. The next take sets a new loop length.';
+    this.emit();
+  }
+
   /** Tracks in display order, for mixdown. */
   getPlayableTracks(): PlayableTrack[] {
     return [...this.tracks.values()]
@@ -471,15 +491,41 @@ export class LoopController {
     this.emit();
   }
 
+  /**
+   * Halts playback but remembers where in the loop we were, so resuming picks
+   * up mid-bar instead of jumping to the top. That difference is the whole
+   * reason pause exists alongside stop.
+   */
+  pause(): void {
+    if (this.isRecording || !this.clock.isRunning) return;
+    this.pausedPosition = this.clock.getCurrentLoopPosition();
+    this.stopTransport();
+    this.state = 'paused';
+    this.emit();
+  }
+
   stop(): void {
     if (this.isRecording) this.cancelRecording();
+    // Unlike pause, stop discards the position — playback restarts at the top.
+    this.pausedPosition = null;
     this.stopTransport();
     this.state = this.loopLengthSec === null ? 'idle' : 'stopped';
     this.emit();
   }
 
   private resumeTransport(): void {
-    this.clock.start(this.loopLengthSec!);
+    const length = this.loopLengthSec!;
+    if (this.pausedPosition === null) {
+      this.clock.start(length);
+      return;
+    }
+
+    // Anchor loop zero in the past by however far in we were. The clock then
+    // emits that already-started boundary, and PlaybackManager starts each
+    // track part-way into its buffer — which is exactly resuming mid-loop.
+    const position = this.pausedPosition;
+    this.pausedPosition = null;
+    this.clock.start(length, this.ctx.currentTime - position);
   }
 
   private stopTransport(): void {

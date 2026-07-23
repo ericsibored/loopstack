@@ -105,6 +105,17 @@ export function TrackRow({ track, isFirst, isLast }: TrackRowProps) {
         >
           S
         </button>
+        {/* Delete stays in the header rather than behind the disclosure:
+            discarding a take you are unhappy with is a first-class action, not
+            an advanced one. */}
+        <button
+          onClick={() => projectActions.removeTrack(track.id)}
+          aria-label={`Delete ${track.label}`}
+          title="Delete this layer"
+          className="size-9 rounded-lg border border-edge text-xs text-ink-dim hover:border-red-500/60 hover:text-red-300"
+        >
+          ✕
+        </button>
         <button
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
@@ -195,12 +206,6 @@ export function TrackRow({ track, isFirst, isLast }: TrackRowProps) {
             <AlignSuggestion track={track} />
           )}
 
-          <button
-            onClick={() => projectActions.removeTrack(track.id)}
-            className="h-9 self-start rounded-lg border border-red-500/40 px-3 text-xs text-red-300"
-          >
-            Delete layer
-          </button>
         </div>
       )}
     </li>

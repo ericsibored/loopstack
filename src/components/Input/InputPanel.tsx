@@ -15,6 +15,7 @@ import {
 } from '../../audio-engine/inputMonitor';
 import type { MicConstraints } from '../../audio-engine/recordingManager';
 import { engine, projectActions, useProjectStore } from '../../store/projectStore';
+import { Diagnostics } from './Diagnostics';
 
 const CONSTRAINT_COPY: Record<keyof MicConstraints, { label: string; hint: string }> = {
   echoCancellation: {
@@ -116,6 +117,7 @@ export function InputPanel() {
         >
           {busy ? 'Requesting…' : 'Enable microphone'}
         </button>
+        <Diagnostics />
       </section>
     );
   }
@@ -235,6 +237,8 @@ export function InputPanel() {
           </p>
         </details>
       )}
+
+      <Diagnostics />
     </div>
   );
 }
