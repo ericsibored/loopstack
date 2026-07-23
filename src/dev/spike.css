@@ -1,0 +1,178 @@
+:root {
+  color-scheme: light dark;
+  --bg: #12131a;
+  --panel: #1b1d27;
+  --line: #2e3140;
+  --text: #e6e8f0;
+  --muted: #9aa0b4;
+  --accent: #5eead4;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.harness {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1rem 1rem 4rem;
+}
+
+h1 {
+  font-size: 1.25rem;
+  margin: 0 0 0.25rem;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 0 0 0.5rem;
+  color: var(--accent);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.75rem;
+  color: var(--muted);
+  gap: 0.15rem;
+}
+
+label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+input[type='number'] {
+  width: 6rem;
+  padding: 0.4rem;
+  background: #0e0f15;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+}
+
+button {
+  /* 44px min target — these get tapped on a phone. */
+  min-height: 44px;
+  padding: 0 0.85rem;
+  background: #262a38;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+button.on {
+  background: var(--accent);
+  color: #10131a;
+  border-color: var(--accent);
+}
+
+.playhead {
+  height: 8px;
+  background: #0e0f15;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 0.5rem 0;
+}
+
+.playhead-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0.25rem 0;
+}
+
+.status {
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+}
+
+.status.error {
+  color: #fca5a5;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.mono.small {
+  font-size: 0.7rem;
+  overflow-x: auto;
+}
+
+.tracks {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+
+.tracks li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.track-name {
+  flex: 1;
+  font-size: 0.85rem;
+}
+
+.offset {
+  min-width: 4.5rem;
+  text-align: center;
+}
+
+.results {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.results th,
+.results td {
+  text-align: left;
+  padding: 0.3rem 0.4rem;
+  border-top: 1px solid var(--line);
+}
+
+.results th {
+  color: var(--muted);
+  font-weight: 500;
+}
